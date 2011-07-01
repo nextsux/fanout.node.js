@@ -109,6 +109,7 @@ Client.prototype.subscribe = function() {
         var listener = function(c, msg) {
           this.socket.write(c + "!" + msg + "\n");
         }.bind(this);
+
         this.listeners[channel] = listener;
         msgEmitter.addListener(channel, listener);
     }.bind(this));
@@ -162,9 +163,8 @@ var server = tcp.createServer(function(socket) {
         conn = null;
         sys.puts("Client connection closed.");
     });
-  });
+});
 
-var client_port = 8880;
-
+var client_port = 1986;
 server.listen(client_port);
 
