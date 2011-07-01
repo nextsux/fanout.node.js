@@ -60,12 +60,8 @@ var handleMessage = function handleMessage(conn, socket, data) {
         var pos = data.indexOf(' ');
         var channel = data.slice(0, pos);
         var msg = data.slice(pos + 1);
-        handleControllerMessage(socket, channel, msg); 
+        msgEmitter.emit(channel, channel, msg);
     }
-};
-
-var handleControllerMessage = function handleControllerMessage(socket, channel, data) {
-    msgEmitter.emit(channel, channel, data);
 };
 
 function Client(connection) {
@@ -168,37 +164,7 @@ var server = tcp.createServer(function(socket) {
     });
   });
 
-var controller = tcp.createServer(function(socket) {
-    sys.puts("Controller connected");
-    socket.setTimeout(0);
-    socket.setEncoding("ascii");
-    socket.setNoDelay();
-
-    socket.addListener("eof", function() {
-        socket.close();
-      });
-
-    socket.addListener("end", function() {
-        sys.puts("Controller closed.");
-      });
-
-    socket.addListener("data", function(data) {
-        sys.puts('raw data: ' + data);
-        var dataarr = data.split("\n");
-        var l = dataarr.length;
-        for (var jj = 0; jj < dataarr.length - 1; jj++) {
-          var dataline = dataarr[jj];
-          var pos = dataline.indexOf(' ');
-          var channel = dataline.slice(0, pos);
-          var msg = dataline.slice(pos + 1);
-          handleControllerMessage(socket, channel, msg);
-        }
-    });
-});
-
 var client_port = 8880;
-var controller_port = 8890;
 
 server.listen(client_port);
-controller.listen(controller_port);
 
