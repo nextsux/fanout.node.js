@@ -1,9 +1,13 @@
-/*
- * fanout.js
- * a fanout messaging server for node.js
- * by @jazzychad - Chad Etzel
- * MIT Licensed
- */
+//   fanout.js
+//
+//   A fanout messaging server for node.js
+//   by @jazzychad - Chad Etzel
+//
+//   + some modifications to be the default
+//     messaging system for SparkleShare
+//
+//   MIT Licensed
+
 
 var tcp = require("net"),
     sys = require("sys");
@@ -36,13 +40,20 @@ var handleMessage = function handleMessage(conn, socket, data) {
   if (data == "time") {
     socket.write(Date.now() + "\n");
   }
+
   if (data.indexOf("subscribe ") == 0) {
     conn.addchannel(data.split(' ')[1]);
     conn.subscribe();
   } else if (data.indexOf("unsubscribe ") == 0) {
     conn.removechannel(data.split(' ')[1]);
-    /* update subscriptions by calling subscribe */
+    // update subscriptions by calling subscribe
     conn.subscribe();
+  } else if (data.indexOf("announce ") == 0) {
+    data = data.substring(9);
+    var pos = data.indexOf(' ');
+    var channel = data.slice(0, pos);
+    var msg = data.slice(pos + 1);
+    handleControllerMessage(socket, channel, msg); 
   }
 };
 
@@ -84,7 +95,6 @@ Client.prototype.removechannel = function(channel) {
 };
 
 Client.prototype.subscribe = function() {
-  
   sys.puts('subs:' + JSON.stringify(this.channels));
   this.channels.forEach(function(channel) {
       var listener = this.listeners[channel];
@@ -127,32 +137,31 @@ var server = tcp.createServer(function(socket) {
     conn.addchannel("all");
     conn.subscribe();
 
-
     socket.addListener("connect", function() {
         socket.write("debug!connected...\n");
-      });
+    });
 
     socket.addListener("data", function(data) {
         //sys.puts('raw data ' + data);
         var dataarr = data.split("\n");
         var l = dataarr.length;
-        for (var jj = 0; jj < dataarr.length-1; jj++) {
+        for (var jj = 0; jj < dataarr.length - 1; jj++) {
           var dataline = dataarr[jj];
           handleMessage(conn, socket, dataline);
         }
-      });
+    });
+    
     socket.addListener("eof", function() {
         socket.close();
-      });
+    });
 
     socket.addListener("end", function() {
-        /* unsubscribe from all here (remove all listeners) */
+        // unsubscribe from all here (remove all listeners)
         conn.deconstruct();
         connections.remove(conn);
         conn = null;
         sys.puts("Client connection closed.");
-      });
-
+    });
   });
 
 var controller = tcp.createServer(function(socket) {
@@ -169,16 +178,15 @@ var controller = tcp.createServer(function(socket) {
         sys.puts("Controller closed.");
       });
 
-
     socket.addListener("data", function(data) {
         sys.puts('raw data: ' + data);
         var dataarr = data.split("\n");
         var l = dataarr.length;
-        for (var jj = 0; jj < dataarr.length-1; jj++) {
+        for (var jj = 0; jj < dataarr.length - 1; jj++) {
           var dataline = dataarr[jj];
-          var i = dataline.indexOf(' ');
-          var channel = dataline.slice(0,i);
-          var msg = dataline.slice(i+1);
+          var pos = dataline.indexOf(' ');
+          var channel = dataline.slice(0, pos);
+          var msg = dataline.slice(pos + 1);
           handleControllerMessage(socket, channel, msg);
         }
       });
@@ -189,3 +197,4 @@ var controller_port = 8890;
 
 server.listen(client_port);
 controller.listen(controller_port);
+
