@@ -15,7 +15,13 @@
 
 
 var tcp = require("net"),
-    sys = require("sys");
+    sys = require("sys"),
+    winston = require('winston');
+
+// Use winston to output log info
+var logger = new (winston.Logger);
+logger.add(winston.transports.Console, { timestamp: true, handleExceptions: true  });
+logger.handleExceptions();
 
 // The .bind method from Prototype.js 
 Function.prototype.bind = function(){ 
@@ -40,7 +46,7 @@ Array.remove = function(array, from, to) {
 var msgEmitter = new process.EventEmitter();
 
 var handleMessage = function handleMessage(conn, socket, data) {
-    sys.puts('[' + conn.name + ']' + ' data: ' + data);
+    logger.info('[' + conn.name + ']' + ' data: ' + data);
 
     if (data == "ping") {
        socket.write(Date.now() + "\n");
@@ -74,7 +80,7 @@ function Client(connection) {
 
 // adds channel. must use "subscribe" to take effect
 Client.prototype.addchannel = function(channel) {
-    sys.puts('adding sub: ' + channel);
+    logger.info('adding sub: ' + channel);
 
     this.removechannel(channel);
     this.channels.push(channel);
@@ -82,7 +88,7 @@ Client.prototype.addchannel = function(channel) {
 
 // removes channel. also removes associated listener immediately
 Client.prototype.removechannel = function(channel) {
-    sys.puts('removing sub');
+    logger.info('removing sub');
     
     // remove channel if it exists
     this.channels.remove(channel);
@@ -95,7 +101,7 @@ Client.prototype.removechannel = function(channel) {
 };
 
 Client.prototype.subscribe = function() {
-    sys.puts('subs:' + JSON.stringify(this.channels));
+    logger.info('subs:' + JSON.stringify(this.channels));
 
     this.channels.forEach(function(channel) {
         var listener = this.listeners[channel];
@@ -134,7 +140,7 @@ var server = tcp.createServer(function(socket) {
     socket.setNoDelay();
     socket.setEncoding("utf8");
 
-    sys.puts("client connected!");
+    logger.info("client connected!");
     conn.addchannel("all");
     conn.subscribe();
 
@@ -161,7 +167,7 @@ var server = tcp.createServer(function(socket) {
         conn.deconstruct();
         connections.remove(conn);
         conn = null;
-        sys.puts("Client connection closed.");
+        logger.info("Client connection closed.");
     });
 });
 
