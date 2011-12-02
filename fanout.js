@@ -13,164 +13,135 @@
 //        announce <channel> <message>
 //        ping
 
+var tcp = require("net");
 
-var tcp = require("net"),
-    sys = require("sys"),
-    winston = require('winston');
-
-// Use winston to output log info
-var logger = new (winston.Logger);
-logger.add(winston.transports.Console, { timestamp: true, handleExceptions: true  });
-logger.handleExceptions();
-
-// The .bind method from Prototype.js 
-Function.prototype.bind = function(){ 
-    var fn = this, args = Array.prototype.slice.call(arguments), object = args.shift(); 
-    return function() { 
-        return fn.apply(object, args.concat(Array.prototype.slice.call(arguments))); 
-    };
-};
-
-Array.prototype.remove = function(e) {
-    for(var i = 0; i < this.length; i++)
-        if(e == this[i]) this.splice(i, 1);
-};
-
-// Array Remove - By John Resig (MIT Licensed)
-Array.remove = function(array, from, to) {
-    var rest = array.slice((to || from) + 1 || array.length);
-    array.length = from < 0 ? array.length + from : from;
-    return array.push.apply(array, rest);
-};
-
-var msgEmitter = new process.EventEmitter();
-
-var handleMessage = function handleMessage(conn, socket, data) {
-    logger.info('[' + conn.name + ']' + ' data: ' + data);
-
-    if (data == "ping") {
-       socket.write(Date.now() + "\n");
-
-    } else if (data.indexOf("subscribe ") == 0) {
-       conn.addchannel(data.split(' ')[1]);
-       conn.subscribe();
-
-    } else if (data.indexOf("unsubscribe ") == 0) {
-       conn.removechannel(data.split(' ')[1]);
-
-       // update subscriptions by calling subscribe
-       conn.subscribe();
-
-    } else if (data.indexOf("announce ") == 0) {
-        data = data.substring(9);
-        var pos = data.indexOf(' ');
-        var channel = data.slice(0, pos);
-        var msg = data.slice(pos + 1);
-        msgEmitter.emit(channel, channel, msg);
-    }
-};
-
-function Client(connection) {
-    this.socket    = connection;
-    this.name      = null;
-    this.timer     = null;
-    this.channels  = [];
-    this.listeners = [];
+function Client(connection, me) {
+  this.socket = connection;
+  this.channels = [];
+  this.listeners = [];
+  this.msgEmitter = me;
 }
 
 // adds channel. must use "subscribe" to take effect
-Client.prototype.addchannel = function(channel) {
-    logger.info('adding sub: ' + channel);
-
-    this.removechannel(channel);
-    this.channels.push(channel);
+Client.prototype.addChannel = function(channel) {
+  this.removeChannel(channel);
+  this.channels.push(channel);
+  this.subscribe();
 };
 
 // removes channel. also removes associated listener immediately
-Client.prototype.removechannel = function(channel) {
-    logger.info('removing sub');
-    
-    // remove channel if it exists
-    this.channels.remove(channel);
-    
-    // remove listener
-    var listener = this.listeners[channel];
-    
-    if (listener)
-        msgEmitter.removeListener(channel, listener);
+Client.prototype.removeChannel = function(channel) {
+  // remove channel if it exists
+  for (var i = 0; i < this.channels.length; i++) {
+    if(channel == this.channels[i]) {
+      this.channels.splice(i, 1);
+    }
+  }
+  
+  // remove listener
+  var listener = this.listeners[channel];
+  if (listener) {
+    this.msgEmitter.removeListener(channel, listener);
+  }
+
+  this.subscribe();
 };
 
 Client.prototype.subscribe = function() {
-    logger.info('subs:' + JSON.stringify(this.channels));
-
-    this.channels.forEach(function(channel) {
-        var listener = this.listeners[channel];
+  var client = this;
+  this.channels.forEach(function(channel) {
+    var listener = client.listeners[channel];
           
-        if (listener)
-          msgEmitter.removeListener(channel, listener);
-      }.bind(this));
+    if (listener) {
+      client.msgEmitter.removeListener(channel, listener);
+    }
+  });
 
-    this.listeners = [];
-    this.channels.forEach(function(channel) {
-        var listener = function(c, msg) {
-          this.socket.write(c + "!" + msg + "\n");
-        }.bind(this);
+  this.listeners = [];
 
-        this.listeners[channel] = listener;
-        msgEmitter.addListener(channel, listener);
-    }.bind(this));
+  this.channels.forEach(function(channel) {
+    var listener = function(c, msg) {
+      client.socket.write(c + "!" + msg + "\n");
+    };
+
+    client.listeners[channel] = listener;
+    client.msgEmitter.addListener(channel, listener);
+  });
 };
 
 Client.prototype.deconstruct = function() {
-    this.channels.forEach(function(channel) {
-        var listener = this.listeners[channel];
-
-        if (listener)
-            msgEmitter.removeListener(channel, listener);
-    }.bind(this));
+  var client = this;
+  this.channels.forEach(function(channel) {
+    var listener = client.listeners[channel];
+    if (listener) {
+      client.msgEmitter.removeListener(channel, listener);
+    }
+  });
 };
 
-var connections = [];
+function Fanout() {
+  this.connections = [];
+  this.msgEmitter = new process.EventEmitter();
+}
 
-var server = tcp.createServer(function(socket) {
-    var conn = new Client(socket);
-    connections.push(conn);
-    conn.name = connections.length;
-    socket.setTimeout(0);
-    socket.setNoDelay();
-    socket.setEncoding("utf8");
+Fanout.prototype.removeConnection = function(connection) {
+  for(var i = 0; i < this.connections.length; i++) {
+    if(connection == this.connections[i]) {
+      this.connections.splice(i, 1);
+    }
+  }
+};
 
-    logger.info("client connected!");
-    conn.addchannel("all");
-    conn.subscribe();
+Fanout.prototype.handleMessage = function(connection, socket, data) {
+  if (data == "ping") {
+    socket.write(Date.now() + "\n");
 
-    socket.addListener("connect", function() {
-        socket.write("debug!connected...\n");
-    });
+  } else if (data.indexOf("subscribe ") === 0) {
+    connection.addChannel(data.split(' ')[1]);
 
-    socket.addListener("data", function(data) {
-        var dataarr = data.split("\n");
-        var l = dataarr.length;
+  } else if (data.indexOf("unsubscribe ") === 0) {
+    connection.removeChannel(data.split(' ')[1]);
 
-        for (var jj = 0; jj < dataarr.length - 1; jj++) {
-          var dataline = dataarr[jj];
-          handleMessage(conn, socket, dataline);
-        }
-    });
-    
-    socket.addListener("eof", function() {
-        socket.close();
-    });
+  } else if (data.indexOf("announce ") === 0) {
+    data = data.substring(9);
+    var pos = data.indexOf(' ');
+    var channel = data.slice(0, pos);
+    var msg = data.slice(pos + 1);
+    this.msgEmitter.emit(channel, channel, msg);
+  }
+};
 
-    socket.addListener("end", function() {
+
+Fanout.prototype.listen = function(port, host) {
+  var fa = this;
+  var server = tcp.createServer(function(socket) {
+    var connection = new Client(socket, fa.msgEmitter);
+      fa.connections.push(connection);
+
+      socket.setNoDelay();
+      socket.setEncoding("utf8");
+
+      connection.addChannel("all");
+
+      socket.addListener("data", function(data) {
+        var dataArr = data.split(/\r\n|\r|\n/);
+        dataArr.slice(0, -1).forEach(function(line){
+          fa.handleMessage(connection, socket, line);
+        });
+      });
+      
+      socket.addListener("end", function() {
         // unsubscribe from all here (remove all listeners)
-        conn.deconstruct();
-        connections.remove(conn);
-        conn = null;
-        logger.info("Client connection closed.");
-    });
-});
+        connection.deconstruct();
+        fa.removeConnection(connection);
+        connection = null;
+      });
+  });
 
-var client_port = 1986;
-server.listen(client_port);
+  server.listen(port, host);
+};
 
+module.exports.listen = function(port, host) {
+  var fa = new Fanout();
+  fa.listen(port, host);
+};
