@@ -112,7 +112,7 @@ Fanout.prototype.handleMessage = function(connection, socket, data) {
 };
 
 
-Fanout.prototype.listen = function(port, host) {
+Fanout.prototype.listen = function(port, host, next) {
   var fa = this;
   var server = tcp.createServer(function(socket) {
     var connection = new Client(socket, fa.msgEmitter);
@@ -138,10 +138,10 @@ Fanout.prototype.listen = function(port, host) {
       });
   });
 
-  server.listen(port, host);
+  server.listen(port, host, next);
 };
 
-module.exports.listen = function(port, host) {
+module.exports.listen = function(port, host, next) {
   var fa = new Fanout();
-  fa.listen(port, host);
+  fa.listen(port, host, next);
 };
